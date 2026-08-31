@@ -1,4 +1,5 @@
 import os
+import uuid
 import shutil
 from fastapi import FastAPI, Request, File, UploadFile, Form, HTTPException, Body
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -67,17 +68,22 @@ async def upload_pdf(
         grade_dir = os.path.join(UPLOAD_DIR, grade)
         os.makedirs(grade_dir, exist_ok=True)
         
-        safe_filename = f"{student_name.replace(' ', '_')}_{pdf_file.filename}"
+        # Nombre de archivo seguro con UUID para evitar problemas de codificación en Linux
+        file_ext = os.path.splitext(pdf_file.filename)[1] or ".pdf"
+        safe_filename = f"{uuid.uuid4().hex}{file_ext}"
         file_path = os.path.join(grade_dir, safe_filename)
         
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(pdf_file.file, buffer)
             
         extracted = extract_pdf_text(file_path)
-        if not extracted.get("full_text") and not extracted.get("first_page_text"):
-            return JSONResponse({"error": "No se pudo leer el contenido del PDF. Verifica que no esté dañado o protegido."}, status_code=400)
+        first_text = extracted.get("first_page_text", "")
+        full_text = extracted.get("full_text", "")
+        
+        if not full_text and not first_text:
+            return JSONResponse({"error": "No se pudo leer el archivo PDF. Verifica que no esté dañado."}, status_code=400)
             
-        cover_eval = validate_cover_page(extracted.get("first_page_text", ""), student_name)
+        cover_eval = validate_cover_page(first_text, student_name)
         
         submission_id = create_submission(
             grade=grade,
@@ -88,34 +94,49 @@ async def upload_pdf(
             cover_details=cover_eval
         )
         
-        if not cover_eval["valid"]:
-            return {
-                "submission_id": submission_id,
-                "cover_valid": False,
-                "cover_summary": cover_eval["summary"],
-                "questions": []
-            }
-            
-        # Generar preguntas (con fallback automático en caso de timeout o error)
-        try:
-            questions = generate_quiz(file_path, extracted.get("body_text", ""), student_name)
-        except Exception as q_err:
-            print(f"Advertencia en generate_quiz: {q_err}")
-            from ai_service import _generate_fallback_quiz, shuffle_quiz_options
-            questions = shuffle_quiz_options(_generate_fallback_quiz(extracted.get("body_text", ""), student_name))
-        
+        # Respuesta instantánea (0.2s) para evitar timeouts en la nube
         return {
             "submission_id": submission_id,
-            "cover_valid": True,
+            "cover_valid": cover_eval["valid"],
             "cover_summary": cover_eval["summary"],
             "student_name": student_name,
             "grade": grade,
-            "filename": pdf_file.filename,
-            "questions": questions
+            "filename": pdf_file.filename
         }
     except Exception as e:
-        print(f"Error general en upload_pdf: {e}")
-        return JSONResponse({"error": f"Ocurrió un detalle al procesar tu entrega: {str(e)}"}, status_code=500)
+        print(f"Error en upload_pdf: {e}")
+        return JSONResponse({"error": f"Ocurrió un detalle al recibir tu PDF: {str(e)}"}, status_code=500)
+
+@app.post("/api/generate-quiz")
+async def generate_quiz_api(payload: dict = Body(...)):
+    submission_id = payload.get("submission_id")
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Entrega no encontrada")
+            sub = dict(row)
+            
+        file_path = sub["file_path"]
+        student_name = sub["student_name"]
+        
+        extracted = extract_pdf_text(file_path)
+        body_text = extracted.get("body_text", "")
+        
+        try:
+            questions = generate_quiz(file_path, body_text, student_name)
+        except Exception as q_err:
+            print(f"Advertencia en generate_quiz: {q_err}")
+            from ai_service import _generate_fallback_quiz, shuffle_quiz_options
+            questions = shuffle_quiz_options(_generate_fallback_quiz(body_text, student_name))
+            
+        return {"questions": questions}
+    except Exception as e:
+        print(f"Error generando preguntas: {e}")
+        from ai_service import _default_static_quiz, shuffle_quiz_options
+        return {"questions": shuffle_quiz_options(_default_static_quiz("Estudiante"))}
 
 @app.post("/api/submit-quiz")
 async def submit_quiz(payload: dict = Body(...)):

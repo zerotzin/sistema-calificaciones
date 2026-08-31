@@ -84,6 +84,13 @@
         Responde antes de que termine el tiempo en cada pregunta.
     </footer>
 
+    <!-- Loading Questions Overlay -->
+    <div id="loadingQuestionsOverlay" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex flex-col items-center justify-center text-white px-4 text-center">
+        <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-400 border-t-transparent mb-4"></div>
+        <h3 class="text-xl md:text-2xl font-bold">Analizando tu trabajo con Inteligencia Artificial...</h3>
+        <p class="text-sm text-slate-200 mt-2 max-w-md">La IA está leyendo tu PDF para generar 10 preguntas personalizadas sobre tu tema. ¡Esto tomará solo unos segundos!</p>
+    </div>
+
     <script>
         let quizSessionData = null;
         let questions = [];
@@ -101,12 +108,35 @@
             }
 
             quizSessionData = JSON.parse(rawData);
-            questions = quizSessionData.questions;
             
             document.getElementById('studentNameDisplay').textContent = `${quizSessionData.student_name} (${quizSessionData.grade}° Grado)`;
             document.getElementById('subInfoDisplay').textContent = `Archivo: ${quizSessionData.filename}`;
 
-            loadQuestion(0);
+            if (quizSessionData.questions && quizSessionData.questions.length > 0) {
+                questions = quizSessionData.questions;
+                document.getElementById('loadingQuestionsOverlay').classList.add('hidden');
+                loadQuestion(0);
+            } else {
+                // Solicitar generación de preguntas de forma asíncrona
+                fetch('/api/generate-quiz', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ submission_id: quizSessionData.submission_id })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    questions = data.questions;
+                    quizSessionData.questions = questions;
+                    sessionStorage.setItem('quiz_data', JSON.stringify(quizSessionData));
+                    document.getElementById('loadingQuestionsOverlay').classList.add('hidden');
+                    loadQuestion(0);
+                })
+                .catch(err => {
+                    console.error("Error al generar preguntas:", err);
+                    document.getElementById('loadingQuestionsOverlay').classList.add('hidden');
+                    alert("Ocurrió un inconveniente al generar tus preguntas. Intenta de nuevo.");
+                });
+            }
         });
 
         function loadQuestion(index) {
