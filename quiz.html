@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cuestionario de Evaluación</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col justify-between font-sans">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 text-white shadow-md py-4 px-6">
+        <div class="max-w-3xl mx-auto flex justify-between items-center">
+            <div>
+                <h1 id="studentNameDisplay" class="text-lg font-bold">Cuestionario Escolar</h1>
+                <p id="subInfoDisplay" class="text-xs text-indigo-200">Basado en tu trabajo entregado</p>
+            </div>
+            <div id="badgeType" class="bg-indigo-700 text-amber-300 font-semibold text-xs px-3 py-1.5 rounded-lg border border-indigo-500">
+                10 Preguntas
+            </div>
+        </div>
+    </header>
+
+    <!-- Quiz Main Card -->
+    <main class="max-w-3xl mx-auto w-full px-4 py-6 flex-grow">
+        <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-slate-200 relative overflow-hidden">
+            
+            <!-- Progress Bar -->
+            <div class="w-full bg-slate-100 h-2 rounded-full mb-6 overflow-hidden">
+                <div id="quizProgressBar" class="bg-indigo-600 h-full w-0 transition-all duration-300"></div>
+            </div>
+
+            <!-- Top Header & Timer -->
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <span id="questionCounter" class="text-xs font-bold text-indigo-600 uppercase tracking-wider">Pregunta 1 de 10</span>
+                    <span id="questionTypeBadge" class="ml-2 text-xs bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full font-medium">Opción Múltiple</span>
+                </div>
+
+                <!-- Timer Ring/Box -->
+                <div class="flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">
+                    <i class="fa-solid fa-stopwatch text-indigo-600 text-xl" id="timerIcon"></i>
+                    <span id="timerText" class="text-2xl font-extrabold text-slate-800 tracking-tight font-mono">30</span>
+                    <span class="text-xs text-slate-400 font-medium">seg</span>
+                </div>
+            </div>
+
+            <!-- Question Text -->
+            <div class="mb-6">
+                <h2 id="questionText" class="text-xl md:text-2xl font-bold text-slate-900 leading-snug">
+                    Cargando pregunta...
+                </h2>
+            </div>
+
+            <!-- Multiple Choice Container -->
+            <div id="mcContainer" class="space-y-3 mb-8">
+                <!-- Dynamic options -->
+            </div>
+
+            <!-- Open Ended Container -->
+            <div id="openContainer" class="hidden mb-8">
+                <label class="block text-sm font-semibold text-slate-700 mb-2">Escribe tu respuesta con tus propias palabras:</label>
+                <textarea id="openAnswerInput" rows="4" placeholder="Escribe aquí tu explicación..." class="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-base"></textarea>
+            </div>
+
+            <!-- Next Button -->
+            <button id="nextBtn" onclick="nextQuestion()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg transition flex items-center justify-center gap-2 text-lg">
+                <span>Siguiente Pregunta</span>
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+
+        </div>
+    </main>
+
+    <!-- Submitting Overlay -->
+    <div id="submittingOverlay" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white">
+        <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-400 border-t-transparent mb-4"></div>
+        <h3 class="text-xl font-bold">Evaluando tus respuestas con Inteligencia Artificial...</h3>
+        <p class="text-sm text-slate-200 mt-1">Espera un momento mientras calculamos tu calificación final.</p>
+    </div>
+
+    <footer class="text-center py-4 text-xs text-slate-400">
+        Responde antes de que termine el tiempo en cada pregunta.
+    </footer>
+
+    <script>
+        let quizSessionData = null;
+        let questions = [];
+        let currentIndex = 0;
+        let userAnswers = [];
+        let timerInterval = null;
+        let timeLeft = 30;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const rawData = sessionStorage.getItem('quiz_data');
+            if (!rawData) {
+                alert('No se encontró información del cuestionario. Redirigiendo...');
+                window.location.href = '/';
+                return;
+            }
+
+            quizSessionData = JSON.parse(rawData);
+            questions = quizSessionData.questions;
+            
+            document.getElementById('studentNameDisplay').textContent = `${quizSessionData.student_name} (${quizSessionData.grade}° Grado)`;
+            document.getElementById('subInfoDisplay').textContent = `Archivo: ${quizSessionData.filename}`;
+
+            loadQuestion(0);
+        });
+
+        function loadQuestion(index) {
+            clearInterval(timerInterval);
+            currentIndex = index;
+            const q = questions[index];
+
+            // Update Progress Bar & Counter
+            const progress = ((index + 1) / questions.length) * 100;
+            document.getElementById('quizProgressBar').style.width = `${progress}%`;
+            document.getElementById('questionCounter').textContent = `Pregunta ${index + 1} de ${questions.length}`;
+            
+            // Question Text
+            document.getElementById('questionText').textContent = q.question;
+
+            // Timer Setup
+            timeLeft = q.timer || (q.type === 'multiple_choice' ? 30 : 60);
+            updateTimerDisplay();
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                updateTimerDisplay();
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    autoAdvanceTimeout();
+                }
+            }, 1000);
+
+            // Display options or text area based on type
+            const mcContainer = document.getElementById('mcContainer');
+            const openContainer = document.getElementById('openContainer');
+
+            if (q.type === 'multiple_choice') {
+                mcContainer.classList.remove('hidden');
+                openContainer.classList.add('hidden');
+                document.getElementById('questionTypeBadge').textContent = 'Opción Múltiple (30s)';
+                document.getElementById('questionTypeBadge').className = 'ml-2 text-xs bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-medium';
+
+                mcContainer.innerHTML = '';
+                q.options.forEach((opt, idx) => {
+                    const label = document.createElement('label');
+                    label.className = 'block border-2 border-slate-200 hover:border-indigo-400 bg-slate-50 p-4 rounded-xl cursor-pointer transition flex items-center gap-3 hover:bg-indigo-50/50';
+                    label.innerHTML = `
+                        <input type="radio" name="option" value="${idx}" class="w-5 h-5 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-slate-800 font-medium text-base">${opt}</span>
+                    `;
+                    mcContainer.appendChild(label);
+                });
+            } else {
+                mcContainer.classList.add('hidden');
+                openContainer.classList.remove('hidden');
+                document.getElementById('questionTypeBadge').textContent = 'Pregunta Abierta (1 min)';
+                document.getElementById('questionTypeBadge').className = 'ml-2 text-xs bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full font-medium';
+                document.getElementById('openAnswerInput').value = '';
+            }
+
+            // Change button text on last question
+            if (index === questions.length - 1) {
+                document.getElementById('nextBtn').innerHTML = `<span>Finalizar y Ver Calificación</span> <i class="fa-solid fa-check-double"></i>`;
+            } else {
+                document.getElementById('nextBtn').innerHTML = `<span>Siguiente Pregunta</span> <i class="fa-solid fa-arrow-right"></i>`;
+            }
+        }
+
+        function updateTimerDisplay() {
+            const display = document.getElementById('timerText');
+            const icon = document.getElementById('timerIcon');
+            display.textContent = timeLeft;
+
+            if (timeLeft <= 5) {
+                display.className = 'text-2xl font-extrabold text-red-600 animate-pulse tracking-tight font-mono';
+                icon.className = 'fa-solid fa-stopwatch text-red-600 text-xl animate-bounce';
+            } else if (timeLeft <= 10) {
+                display.className = 'text-2xl font-extrabold text-amber-600 tracking-tight font-mono';
+                icon.className = 'fa-solid fa-stopwatch text-amber-600 text-xl';
+            } else {
+                display.className = 'text-2xl font-extrabold text-slate-800 tracking-tight font-mono';
+                icon.className = 'fa-solid fa-stopwatch text-indigo-600 text-xl';
+            }
+        }
+
+        function saveAnswer() {
+            const q = questions[currentIndex];
+            let answerVal = null;
+
+            if (q.type === 'multiple_choice') {
+                const selected = document.querySelector('input[name="option"]:checked');
+                answerVal = selected ? parseInt(selected.value) : -1;
+            } else {
+                answerVal = document.getElementById('openAnswerInput').value.trim();
+            }
+
+            userAnswers.push({
+                question_id: q.id,
+                type: q.type,
+                user_answer: answerVal,
+                question_text: q.question,
+                expected_concepts: q.expected_concepts || []
+            });
+        }
+
+        function autoAdvanceTimeout() {
+            saveAnswer();
+            if (currentIndex < questions.length - 1) {
+                loadQuestion(currentIndex + 1);
+            } else {
+                submitQuizResults();
+            }
+        }
+
+        function nextQuestion() {
+            saveAnswer();
+            if (currentIndex < questions.length - 1) {
+                loadQuestion(currentIndex + 1);
+            } else {
+                submitQuizResults();
+            }
+        }
+
+        function submitQuizResults() {
+            clearInterval(timerInterval);
+            document.getElementById('submittingOverlay').classList.remove('hidden');
+
+            const payload = {
+                submission_id: quizSessionData.submission_id,
+                student_name: quizSessionData.student_name,
+                grade: quizSessionData.grade,
+                answers: userAnswers,
+                questions: questions
+            };
+
+            fetch('/api/submit-quiz', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json())
+            .then(data => {
+                sessionStorage.setItem('quiz_result', JSON.stringify(data));
+                window.location.href = '/result';
+            })
+            .catch(err => {
+                alert('Ocurrió un error al enviar el examen. Intenta de nuevo.');
+                document.getElementById('submittingOverlay').classList.add('hidden');
+            });
+        }
+    </script>
+</body>
+</html>

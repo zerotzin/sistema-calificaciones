@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel del Profesor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col justify-between font-sans">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white shadow-md py-4 px-6">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-user-shield text-2xl text-amber-400"></i>
+                <h1 class="text-xl font-bold tracking-tight">Panel del Profesor (Control Escolar)</h1>
+            </div>
+            <div id="authHeader" class="hidden flex items-center gap-3">
+                <span class="text-xs bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700">PIN: <strong>1632</strong></span>
+                <a href="/" class="text-xs bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg font-bold transition">Portal Alumnos</a>
+                <button onclick="logout()" class="text-xs bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg font-bold transition">Salir</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Login Modal/Screen -->
+    <div id="loginScreen" class="max-w-md mx-auto w-full px-4 py-16">
+        <div class="bg-white rounded-2xl shadow-xl p-8 border border-slate-200 text-center">
+            <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-700 text-2xl">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-slate-900 mb-1">Acceso Maestro</h2>
+            <p class="text-xs text-slate-500 mb-6">Ingresa tu PIN de seguridad para acceder a los trabajos y calificaciones.</p>
+
+            <div id="loginError" class="hidden mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl font-medium"></div>
+
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <input type="password" id="pinInput" placeholder="Ingresa tu PIN (ej. 1632)" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-center text-xl font-mono tracking-widest focus:ring-2 focus:ring-slate-900 focus:outline-none" required>
+                <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl shadow-lg transition">
+                    Ingresar al Panel
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Container -->
+    <main id="dashboardScreen" class="hidden max-w-6xl mx-auto w-full px-4 py-8 flex-grow">
+        
+        <!-- Navigation Tabs -->
+        <div class="flex border-b border-slate-200 mb-6 gap-2">
+            <button onclick="switchTab('tabSubmissions')" id="btnTabSubmissions" class="tab-btn py-3 px-5 font-bold text-sm border-b-2 border-slate-900 text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-file-invoice"></i> Entregas y Calificaciones
+            </button>
+            <button onclick="switchTab('tabStudents')" id="btnTabStudents" class="tab-btn py-3 px-5 font-bold text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-users"></i> Listas de Alumnos (4°, 5°, 6°)
+            </button>
+            <button onclick="switchTab('tabConfig')" id="btnTabConfig" class="tab-btn py-3 px-5 font-bold text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-key"></i> Clave API Gemini
+            </button>
+        </div>
+
+        <!-- Notification Box -->
+        <div id="dashAlert" class="hidden mb-6 p-4 rounded-xl text-sm font-medium flex items-center gap-3"></div>
+
+        <!-- TAB 1: Submissions Table -->
+        <div id="tabSubmissions" class="tab-content">
+            <div class="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-900">Trabajos Recibidos</h3>
+                        <p class="text-xs text-slate-500">Histórico de tareas en PDF entregadas por los alumnos y su nota en el examen.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <select id="filterGrade" onchange="filterSubmissions()" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold">
+                            <option value="all">Todos los Grados</option>
+                            <option value="4">4° Grado</option>
+                            <option value="5">5° Grado</option>
+                            <option value="6">6° Grado</option>
+                        </select>
+                        <button onclick="loadSubmissions()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold border border-slate-300 flex items-center gap-1">
+                            <i class="fa-solid fa-rotate"></i> Actualizar
+                        </button>
+                        <button onclick="purgeAllSubmissions()" class="bg-red-50 hover:bg-red-100 text-red-700 px-3 py-2 rounded-xl text-xs font-bold border border-red-200 flex items-center gap-1">
+                            <i class="fa-solid fa-trash-arrow-up"></i> Vaciar Entregas
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-slate-700">
+                        <thead class="bg-slate-100 text-slate-800 uppercase font-bold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">Grado</th>
+                                <th class="p-3">Alumno</th>
+                                <th class="p-3">Fecha de Entrega</th>
+                                <th class="p-3">Estado de Portada</th>
+                                <th class="p-3 text-center">Nota Cuestionario</th>
+                                <th class="p-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="submissionsTableBody" class="divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="6" class="text-center py-8 text-slate-400">Cargando entregas...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: Students Roster Manager -->
+        <div id="tabStudents" class="tab-content hidden space-y-6">
+            
+            <!-- PDF Upload Roster Option -->
+            <div class="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+                <h3 class="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+                    <i class="fa-solid fa-file-pdf text-indigo-600"></i>
+                    <span>Cargar Alumnos mediante PDF (3 Páginas)</span>
+                </h3>
+                <p class="text-xs text-slate-500 mb-4">Sube un PDF donde la <strong>Página 1 sea 4° grado</strong>, la <strong>Página 2 sea 5° grado</strong> y la <strong>Página 3 sea 6° grado</strong>. La IA extraerá los nombres automáticamente.</p>
+                
+                <form id="rosterPdfForm" class="flex flex-col md:flex-row items-center gap-4">
+                    <input type="file" id="rosterPdfInput" accept=".pdf" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" required>
+                    <button type="submit" class="whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow transition">
+                        Extraer e Importar Nombres
+                    </button>
+                </form>
+            </div>
+
+            <!-- Manual Editor Grids -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- 4th Grade -->
+                <div class="bg-white rounded-2xl shadow-lg p-5 border border-slate-200">
+                    <h4 class="font-bold text-slate-900 mb-2 text-sm flex justify-between items-center">
+                        <span>4° Grado Escolar</span>
+                        <span id="count4" class="text-xs bg-slate-100 px-2 py-0.5 rounded font-mono">0 alumnos</span>
+                    </h4>
+                    <div id="list4" class="space-y-1.5 max-h-60 overflow-y-auto mb-4 pr-1 text-xs"></div>
+                    <form onsubmit="handleAddStudent(event, '4')" class="flex gap-2">
+                        <input type="text" placeholder="Nuevo alumno..." class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none" required>
+                        <button type="submit" class="bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg text-xs hover:bg-slate-800">Agregar</button>
+                    </form>
+                </div>
+
+                <!-- 5th Grade -->
+                <div class="bg-white rounded-2xl shadow-lg p-5 border border-slate-200">
+                    <h4 class="font-bold text-slate-900 mb-2 text-sm flex justify-between items-center">
+                        <span>5° Grado Escolar</span>
+                        <span id="count5" class="text-xs bg-slate-100 px-2 py-0.5 rounded font-mono">0 alumnos</span>
+                    </h4>
+                    <div id="list5" class="space-y-1.5 max-h-60 overflow-y-auto mb-4 pr-1 text-xs"></div>
+                    <form onsubmit="handleAddStudent(event, '5')" class="flex gap-2">
+                        <input type="text" placeholder="Nuevo alumno..." class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none" required>
+                        <button type="submit" class="bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg text-xs hover:bg-slate-800">Agregar</button>
+                    </form>
+                </div>
+
+                <!-- 6th Grade -->
+                <div class="bg-white rounded-2xl shadow-lg p-5 border border-slate-200">
+                    <h4 class="font-bold text-slate-900 mb-2 text-sm flex justify-between items-center">
+                        <span>6° Grado Escolar</span>
+                        <span id="count6" class="text-xs bg-slate-100 px-2 py-0.5 rounded font-mono">0 alumnos</span>
+                    </h4>
+                    <div id="list6" class="space-y-1.5 max-h-60 overflow-y-auto mb-4 pr-1 text-xs"></div>
+                    <form onsubmit="handleAddStudent(event, '6')" class="flex gap-2">
+                        <input type="text" placeholder="Nuevo alumno..." class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none" required>
+                        <button type="submit" class="bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg text-xs hover:bg-slate-800">Agregar</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: Gemini API Key Config -->
+        <div id="tabConfig" class="tab-content hidden">
+            <div class="bg-white rounded-2xl shadow-lg p-6 border border-slate-200 max-w-xl">
+                <h3 class="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-brain text-indigo-600"></i>
+                    <span>Configuración de Inteligencia Artificial (Gemini API)</span>
+                </h3>
+                <p class="text-xs text-slate-500 mb-6">La Clave API de Gemini permite que el sistema genere automáticamente las 10 preguntas del examen basándose en cada archivo PDF y que evalúe con precisión las respuestas abiertas.</p>
+
+                <form onsubmit="handleSaveApiKey(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Clave API de Google Gemini (AI Studio):</label>
+                        <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow transition">
+                        Guardar Clave API
+                    </button>
+                </form>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="text-center py-4 text-xs text-slate-400">
+        Panel de Administración del Profesor &copy; 2026
+    </footer>
+
+    <script>
+        let submissionsData = [];
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const pin = document.getElementById('pinInput').value;
+
+            fetch('/maestro/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pin: pin })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    sessionStorage.setItem('teacher_authenticated', 'true');
+                    showDashboard();
+                } else {
+                    const errBox = document.getElementById('loginError');
+                    errBox.textContent = 'PIN incorrecto. Intenta de nuevo.';
+                    errBox.classList.remove('hidden');
+                }
+            });
+        }
+
+        function logout() {
+            sessionStorage.removeItem('teacher_authenticated');
+            location.reload();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (sessionStorage.getItem('teacher_authenticated') === 'true') {
+                showDashboard();
+            }
+        });
+
+        function showDashboard() {
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('dashboardScreen').classList.remove('hidden');
+            document.getElementById('authHeader').classList.remove('hidden');
+
+            loadSubmissions();
+            loadStudents();
+            loadApiKey();
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(tabId).classList.remove('hidden');
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('border-slate-900', 'text-slate-900');
+                btn.classList.add('border-transparent', 'text-slate-500');
+            });
+
+            if (tabId === 'tabSubmissions') document.getElementById('btnTabSubmissions').className = 'tab-btn py-3 px-5 font-bold text-sm border-b-2 border-slate-900 text-slate-900 flex items-center gap-2';
+            if (tabId === 'tabStudents') document.getElementById('btnTabStudents').className = 'tab-btn py-3 px-5 font-bold text-sm border-b-2 border-slate-900 text-slate-900 flex items-center gap-2';
+            if (tabId === 'tabConfig') document.getElementById('btnTabConfig').className = 'tab-btn py-3 px-5 font-bold text-sm border-b-2 border-slate-900 text-slate-900 flex items-center gap-2';
+        }
+
+        function loadSubmissions() {
+            fetch('/maestro/api/submissions')
+                .then(res => res.json())
+                .then(data => {
+                    submissionsData = data.submissions;
+                    renderSubmissionsTable(submissionsData);
+                });
+        }
+
+        function filterSubmissions() {
+            const val = document.getElementById('filterGrade').value;
+            if (val === 'all') {
+                renderSubmissionsTable(submissionsData);
+            } else {
+                renderSubmissionsTable(submissionsData.filter(s => s.grade === val));
+            }
+        }
+
+        function renderSubmissionsTable(list) {
+            const tbody = document.getElementById('submissionsTableBody');
+            tbody.innerHTML = '';
+
+            if (!list || list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400">No hay entregas registradas aún.</td></tr>';
+                return;
+            }
+
+            list.forEach(sub => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50/80 transition';
+
+                const score = parseFloat(sub.quiz_score).toFixed(1);
+                let scoreBadge = `<span class="bg-indigo-100 text-indigo-800 font-extrabold px-2.5 py-1 rounded-lg">${score} / 10</span>`;
+
+                let coverBadge = sub.cover_valid 
+                    ? `<span class="bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-md text-[11px]"><i class="fa-solid fa-circle-check mr-1"></i>Válida</span>`
+                    : `<span class="bg-red-100 text-red-800 font-semibold px-2 py-0.5 rounded-md text-[11px]"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Incompleta</span>`;
+
+                tr.innerHTML = `
+                    <td class="p-3 font-bold text-slate-900">${sub.grade}°</td>
+                    <td class="p-3 font-semibold text-slate-800">${sub.student_name}</td>
+                    <td class="p-3 text-slate-500">${sub.created_at}</td>
+                    <td class="p-3">${coverBadge}</td>
+                    <td class="p-3 text-center">${scoreBadge}</td>
+                    <td class="p-3 text-center flex justify-center items-center gap-1.5">
+                        <a href="/maestro/download/${sub.id}" class="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow">
+                            <i class="fa-solid fa-download"></i> PDF
+                        </a>
+                        <button onclick="deleteSubmission(${sub.id}, '${sub.student_name}')" class="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-600 font-bold p-1.5 rounded-lg border border-red-200 text-xs transition" title="Eliminar esta entrega">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function deleteSubmission(id, studentName) {
+            if (confirm(`¿Estás seguro de eliminar la entrega de ${studentName}? Se borrará el registro y su archivo PDF.`)) {
+                fetch(`/maestro/api/submissions/${id}`, { method: 'DELETE' })
+                    .then(res => res.json())
+                    .then(() => loadSubmissions());
+            }
+        }
+
+        function purgeAllSubmissions() {
+            if (confirm('¡ATENCIÓN! ¿Estás seguro de ELIMINAR TODAS las entregas y archivos PDF registrados hasta ahora? Esta acción no se puede deshacer.')) {
+                if (confirm('Confirma una segunda vez: Se borrarán TODOS los trabajos y calificaciones del servidor.')) {
+                    fetch('/maestro/api/submissions/all/purge', { method: 'DELETE' })
+                        .then(res => res.json())
+                        .then(() => {
+                            alert('Se han eliminado todas las entregas correctamente.');
+                            loadSubmissions();
+                        });
+                }
+            }
+        }
+
+        function loadStudents() {
+            ['4', '5', '6'].forEach(grade => {
+                fetch(`/api/students/${grade}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        const listEl = document.getElementById(`list${grade}`);
+                        const countEl = document.getElementById(`count${grade}`);
+                        countEl.textContent = `${data.students.length} alumnos`;
+                        listEl.innerHTML = '';
+
+                        data.students.forEach(s => {
+                            const item = document.createElement('div');
+                            item.className = 'flex justify-between items-center bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg';
+                            item.innerHTML = `
+                                <span>${s.name}</span>
+                                <button onclick="deleteStudent(${s.id})" class="text-slate-400 hover:text-red-600 transition"><i class="fa-solid fa-trash-can"></i></button>
+                            `;
+                            listEl.appendChild(item);
+                        });
+                    });
+            });
+        }
+
+        function handleAddStudent(e, grade) {
+            e.preventDefault();
+            const input = e.target.querySelector('input');
+            const name = input.value.trim();
+            if (!name) return;
+
+            fetch('/maestro/api/students/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ grade: grade, name: name })
+            })
+            .then(res => res.json())
+            .then(() => {
+                input.value = '';
+                loadStudents();
+            });
+        }
+
+        function deleteStudent(id) {
+            if (confirm('¿Eliminar alumno de la lista?')) {
+                fetch(`/maestro/api/students/delete/${id}`, { method: 'DELETE' })
+                    .then(() => loadStudents());
+            }
+        }
+
+        document.getElementById('rosterPdfForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const file = document.getElementById('rosterPdfInput').files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('pdf_file', file);
+
+            fetch('/maestro/api/students/upload-pdf', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('Listas actualizadas correctamente desde el PDF.');
+                loadStudents();
+            });
+        });
+
+        function loadApiKey() {
+            fetch('/maestro/api/key')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('apiKeyInput').value = data.key || '';
+                });
+        }
+
+        function handleSaveApiKey(e) {
+            e.preventDefault();
+            const key = document.getElementById('apiKeyInput').value;
+
+            fetch('/maestro/api/key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: key })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('Clave API guardada correctamente.');
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultado del Cuestionario</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between font-sans">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 text-white shadow-md py-4 px-6">
+        <div class="max-w-3xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold">Resultado de Evaluación</h1>
+            <a href="/" class="text-xs bg-indigo-700 hover:bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-500 flex items-center gap-1.5">
+                <i class="fa-solid fa-house"></i> Inicio
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-3xl mx-auto w-full px-4 py-8 flex-grow">
+        
+        <!-- Score Overview Card -->
+        <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-slate-100 mb-6 text-center relative overflow-hidden">
+            <div id="scoreBgBadge" class="absolute -right-10 -top-10 text-9xl text-indigo-50/50 font-black pointer-events-none">
+                <i class="fa-solid fa-award"></i>
+            </div>
+
+            <span class="bg-indigo-100 text-indigo-700 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">Resultado Final</span>
+            
+            <h2 id="resStudentName" class="text-2xl font-extrabold text-slate-900 mt-2">Cargando resultado...</h2>
+            <p id="resGradeInfo" class="text-xs text-slate-500 mb-6">Grado Escolar</p>
+
+            <div class="inline-flex flex-col items-center justify-center bg-indigo-50 border-2 border-indigo-100 rounded-3xl p-6 mb-6 min-w-[200px]">
+                <span class="text-xs font-bold text-indigo-500 uppercase tracking-widest mb-1">Calificación</span>
+                <span id="finalScoreDisplay" class="text-5xl md:text-6xl font-black text-indigo-600 tracking-tight">0.0</span>
+                <span class="text-xs text-slate-400 font-medium mt-1">de 10 puntos posibles</span>
+            </div>
+
+            <!-- Feedback Badge -->
+            <div id="resBadge" class="text-sm font-bold px-4 py-2 rounded-xl inline-block"></div>
+        </div>
+
+        <!-- Details Breakdown -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 border border-slate-100 mb-6">
+            <h3 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-list-check text-indigo-600"></i>
+                <span>Desglose de la Evaluación</span>
+            </h3>
+
+            <div id="questionsBreakdown" class="space-y-4">
+                <!-- Dynamic questions result -->
+            </div>
+        </div>
+
+        <!-- Finish Button -->
+        <div class="text-center">
+            <a href="/" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg hover:shadow-xl transition">
+                <i class="fa-solid fa-check"></i>
+                <span>Finalizar y Salir</span>
+            </a>
+        </div>
+
+    </main>
+
+    <footer class="text-center py-4 text-xs text-slate-400">
+        Tus respuestas y trabajo en PDF han sido almacenados correctamente para tu profesor.
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const raw = sessionStorage.getItem('quiz_result');
+            if (!raw) {
+                window.location.href = '/';
+                return;
+            }
+
+            const data = JSON.parse(raw);
+            
+            document.getElementById('resStudentName').textContent = data.student_name;
+            document.getElementById('resGradeInfo').textContent = `${data.grade}° Grado - Trabajo evaluado con Inteligencia Artificial`;
+
+            const score = parseFloat(data.final_score).toFixed(1);
+            document.getElementById('finalScoreDisplay').textContent = score;
+
+            const badge = document.getElementById('resBadge');
+            if (score >= 9.0) {
+                badge.className = 'text-sm font-bold px-4 py-2 rounded-xl inline-block bg-emerald-100 text-emerald-800 border border-emerald-200';
+                badge.innerHTML = '<i class="fa-solid fa-star text-amber-500 mr-1.5"></i> ¡Excelente comprensión de tu trabajo!';
+            } else if (score >= 7.0) {
+                badge.className = 'text-sm font-bold px-4 py-2 rounded-xl inline-block bg-blue-100 text-blue-800 border border-blue-200';
+                badge.innerHTML = '<i class="fa-solid fa-thumbs-up mr-1.5"></i> ¡Buen trabajo! Comprendes las ideas principales.';
+            } else if (score >= 6.0) {
+                badge.className = 'text-sm font-bold px-4 py-2 rounded-xl inline-block bg-amber-100 text-amber-800 border border-amber-200';
+                badge.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1.5"></i> Aprobatorio. Te sugerimos repasar tu lectura.';
+            } else {
+                badge.className = 'text-sm font-bold px-4 py-2 rounded-xl inline-block bg-red-100 text-red-800 border border-red-200';
+                badge.innerHTML = '<i class="fa-solid fa-circle-exclamation mr-1.5"></i> Requiere repaso. Lee con atención tu trabajo entregado.';
+            }
+
+            // Render questions breakdown
+            const container = document.getElementById('questionsBreakdown');
+            container.innerHTML = '';
+
+            data.details.forEach((item, idx) => {
+                const card = document.createElement('div');
+                card.className = 'p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs md:text-sm';
+                
+                let statusBadge = '';
+                if (item.score === 1.0) {
+                    statusBadge = `<span class="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-xs"><i class="fa-solid fa-check mr-1"></i>Correcto (+1.0)</span>`;
+                } else if (item.score === 0.5) {
+                    statusBadge = `<span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-xs"><i class="fa-solid fa-minus mr-1"></i>Parcial (+0.5)</span>`;
+                } else {
+                    statusBadge = `<span class="bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded-full text-xs"><i class="fa-solid fa-xmark mr-1"></i>Incorrecto (0.0)</span>`;
+                }
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2 gap-2">
+                        <span class="font-bold text-slate-900">${idx + 1}. ${item.question_text}</span>
+                        ${statusBadge}
+                    </div>
+                    <p class="text-slate-600 mb-1"><strong>Tu respuesta:</strong> ${item.user_answer !== null && item.user_answer !== undefined && item.user_answer !== '' ? item.user_answer : '<em class="text-slate-400">Sin respuesta (Tiempo agotado)</em>'}</p>
+                    <p class="text-indigo-600 font-medium text-xs"><strong>Comentario IA:</strong> ${item.feedback}</p>
+                `;
+                container.appendChild(card);
+            });
+        });
+    </script>
+</body>
+</html>
