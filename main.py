@@ -22,7 +22,14 @@ app = FastAPI(title="Sistema de Entregas y Calificaciones")
 # Inicializar base de datos
 init_db()
 
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+template_dirs = [
+    os.path.join(BASE_DIR, "templates"),
+    os.path.join(os.getcwd(), "templates"),
+    "templates"
+]
+template_dir = next((d for d in template_dirs if os.path.exists(d) and os.path.isdir(d)), os.path.join(BASE_DIR, "templates"))
+
+templates = Jinja2Templates(directory=template_dir)
 
 # --- RUTAS DE VISTA HTML ---
 
