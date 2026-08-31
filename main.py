@@ -19,15 +19,13 @@ from ai_service import (
 
 app = FastAPI(title="Sistema de Entregas y Calificaciones")
 
+from templates_bootstrap import bootstrap_templates
+
 # Inicializar base de datos
 init_db()
 
-template_dirs = [
-    os.path.join(BASE_DIR, "templates"),
-    os.path.join(os.getcwd(), "templates"),
-    "templates"
-]
-template_dir = next((d for d in template_dirs if os.path.exists(d) and os.path.isdir(d)), os.path.join(BASE_DIR, "templates"))
+template_dir = os.path.join(BASE_DIR, "templates")
+bootstrap_templates(template_dir)
 
 templates = Jinja2Templates(directory=template_dir)
 
