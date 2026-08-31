@@ -1,5 +1,7 @@
+import os
 import re
 import json
+import unicodedata
 from pypdf import PdfReader
 from google import genai
 from google.genai import types
@@ -140,7 +142,10 @@ def validate_cover_page(first_page_text: str, student_name: str) -> dict:
     }
 
 def get_api_key():
-    return get_setting("gemini_api_key", "")
+    env_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if env_key:
+        return env_key
+    return get_setting("gemini_api_key", "").strip()
 
 import random
 

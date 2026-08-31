@@ -60,57 +60,62 @@ async def upload_pdf(
     student_name: str = Form(...),
     pdf_file: UploadFile = File(...)
 ):
-    if not pdf_file.filename.lower().endswith(".pdf"):
-        return JSONResponse({"error": "El archivo debe estar en formato PDF."}, status_code=400)
-    
-    # Crear subcarpeta por grado
-    grade_dir = os.path.join(UPLOAD_DIR, grade)
-    os.makedirs(grade_dir, exist_ok=True)
-    
-    safe_filename = f"{student_name.replace(' ', '_')}_{pdf_file.filename}"
-    file_path = os.path.join(grade_dir, safe_filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(pdf_file.file, buffer)
+    try:
+        if not pdf_file.filename.lower().endswith(".pdf"):
+            return JSONResponse({"error": "El archivo debe estar en formato PDF."}, status_code=400)
         
-    # Extraer texto del PDF
-    extracted = extract_pdf_text(file_path)
-    if not extracted["full_text"]:
-        return JSONResponse({"error": "No se pudo leer el contenido del PDF. Verifica que no esté dañado o protegido."}, status_code=400)
+        grade_dir = os.path.join(UPLOAD_DIR, grade)
+        os.makedirs(grade_dir, exist_ok=True)
         
-    # Validar portada
-    cover_eval = validate_cover_page(extracted["first_page_text"], student_name)
-    
-    # Registrar la entrega en base de datos
-    submission_id = create_submission(
-        grade=grade,
-        student_name=student_name,
-        filename=pdf_file.filename,
-        file_path=file_path,
-        cover_valid=cover_eval["valid"],
-        cover_details=cover_eval
-    )
-    
-    if not cover_eval["valid"]:
+        safe_filename = f"{student_name.replace(' ', '_')}_{pdf_file.filename}"
+        file_path = os.path.join(grade_dir, safe_filename)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(pdf_file.file, buffer)
+            
+        extracted = extract_pdf_text(file_path)
+        if not extracted.get("full_text") and not extracted.get("first_page_text"):
+            return JSONResponse({"error": "No se pudo leer el contenido del PDF. Verifica que no esté dañado o protegido."}, status_code=400)
+            
+        cover_eval = validate_cover_page(extracted.get("first_page_text", ""), student_name)
+        
+        submission_id = create_submission(
+            grade=grade,
+            student_name=student_name,
+            filename=pdf_file.filename,
+            file_path=file_path,
+            cover_valid=cover_eval["valid"],
+            cover_details=cover_eval
+        )
+        
+        if not cover_eval["valid"]:
+            return {
+                "submission_id": submission_id,
+                "cover_valid": False,
+                "cover_summary": cover_eval["summary"],
+                "questions": []
+            }
+            
+        # Generar preguntas (con fallback automático en caso de timeout o error)
+        try:
+            questions = generate_quiz(file_path, extracted.get("body_text", ""), student_name)
+        except Exception as q_err:
+            print(f"Advertencia en generate_quiz: {q_err}")
+            from ai_service import _generate_fallback_quiz, shuffle_quiz_options
+            questions = shuffle_quiz_options(_generate_fallback_quiz(extracted.get("body_text", ""), student_name))
+        
         return {
             "submission_id": submission_id,
-            "cover_valid": False,
+            "cover_valid": True,
             "cover_summary": cover_eval["summary"],
-            "questions": []
+            "student_name": student_name,
+            "grade": grade,
+            "filename": pdf_file.filename,
+            "questions": questions
         }
-        
-    # Generar cuestionario de 10 preguntas analizando texto e imágenes (mapas mentales, infografías, líneas del tiempo) con Gemini Multimodal
-    questions = generate_quiz(file_path, extracted["body_text"], student_name)
-    
-    return {
-        "submission_id": submission_id,
-        "cover_valid": True,
-        "cover_summary": cover_eval["summary"],
-        "student_name": student_name,
-        "grade": grade,
-        "filename": pdf_file.filename,
-        "questions": questions
-    }
+    except Exception as e:
+        print(f"Error general en upload_pdf: {e}")
+        return JSONResponse({"error": f"Ocurrió un detalle al procesar tu entrega: {str(e)}"}, status_code=500)
 
 @app.post("/api/submit-quiz")
 async def submit_quiz(payload: dict = Body(...)):

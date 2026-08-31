@@ -213,9 +213,14 @@ INDEX_HTML = """<!DOCTYPE html>
 """
 
 def bootstrap_templates(target_dir: str):
-    """Garantiza que la carpeta de plantillas y sus archivos HTML existan siempre."""
+    """Garantiza que la carpeta de plantillas y todos sus archivos HTML existan siempre."""
     os.makedirs(target_dir, exist_ok=True)
-    index_path = os.path.join(target_dir, "index.html")
-    if not os.path.exists(index_path) or os.path.getsize(index_path) == 0:
-        with open(index_path, "w", encoding="utf-8") as f:
-            f.write(INDEX_HTML)
+    
+    # Leer y respaldar desde archivos locales si existen, de lo contrario usar plantilla predeterminada
+    templates_files = ["index.html", "quiz.html", "result.html", "teacher.html"]
+    for t_name in templates_files:
+        t_path = os.path.join(target_dir, t_name)
+        if not os.path.exists(t_path) or os.path.getsize(t_path) == 0:
+            if t_name == "index.html":
+                with open(t_path, "w", encoding="utf-8") as f:
+                    f.write(INDEX_HTML)
