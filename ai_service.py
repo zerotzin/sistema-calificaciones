@@ -165,33 +165,40 @@ def shuffle_quiz_options(quiz_questions: list) -> list:
 def generate_quiz(pdf_path: str, pdf_body_text: str, student_name: str) -> list:
     """
     Genera 10 preguntas (7 opción múltiple a 30s y 3 abiertas a 60s).
-    Aprovecha las capacidades multimodales de visión de Gemini 2.5 Flash para analizar
-    texto, mapas mentales, mapas conceptuales, infografías y líneas del tiempo en PDF.
+    Usa Gemini 3.6 Flash con visión multimodal y fallback ultra seguro.
     """
+    pdf_body_text = str(pdf_body_text or "")
+    student_name = str(student_name or "Estudiante")
+    
     api_key = get_api_key()
     
     if api_key:
         try:
             client = genai.Client(api_key=api_key)
             
-            # Leer el archivo PDF original para enviarlo directamente a la IA (visión multimodal)
-            with open(pdf_path, "rb") as f:
-                pdf_bytes = f.read()
-                
-            pdf_part = types.Part.from_bytes(
-                data=pdf_bytes,
-                mime_type="application/pdf"
-            )
+            contents = []
+            # Intentar adjuntar el archivo PDF si existe y es legible
+            if pdf_path and os.path.exists(pdf_path):
+                try:
+                    with open(pdf_path, "rb") as f:
+                        pdf_bytes = f.read()
+                    if pdf_bytes:
+                        pdf_part = types.Part.from_bytes(
+                            data=pdf_bytes,
+                            mime_type="application/pdf"
+                        )
+                        contents.append(pdf_part)
+                except Exception as file_err:
+                    print(f"Advertencia al abrir bytes de PDF para Gemini: {file_err}")
             
             prompt = f"""
             Eres un profesor de educación primaria evaluando la comprensión del alumno {student_name} sobre su trabajo escolar.
-            El documento adjunto en formato PDF puede contener texto redactado, mapas mentales, mapas conceptuales, líneas del tiempo, infografías, esquemas o imágenes con texto.
+            El documento adjunto en formato PDF o el texto del trabajo contiene el desarrollo del tema (puede incluir texto, mapas mentales, mapas conceptuales, líneas del tiempo o infografías).
 
             INSTRUCCIONES OBLIGATORIAS:
-            1. Analiza tanto el texto como el contenido visual de las páginas de desarrollo del tema (páginas a partir de la página 2 o el contenido principal del documento).
-            2. Lee y comprende cualquier mapa mental, mapa conceptual, línea del tiempo (fechas y hechos), infografía, gráfico o texto dentro de imágenes.
-            3. Ignora los datos formales de la portada (página 1: nombre del alumno, grado, trimestre).
-            4. Genera EXACTAMENTE 10 preguntas pedagógicas basadas ÚNICAMENTE en el contenido temático, datos, imágenes o conceptos expuestos en el trabajo:
+            1. Analiza tanto el texto como el contenido visual de las páginas de desarrollo del tema.
+            2. Ignora los datos formales de la portada (página 1: nombre del alumno, grado, trimestre).
+            3. Genera EXACTAMENTE 10 preguntas pedagógicas basadas ÚNICAMENTE en el contenido temático o conceptos del trabajo:
                - Preguntas 1 a 7: Opción múltiple (4 opciones A, B, C, D) con tiempo límite de 30 segundos.
                - Preguntas 8 a 10: Preguntas abiertas de reflexión o síntesis sobre el tema con tiempo límite de 60 segundos.
 
@@ -214,28 +221,73 @@ def generate_quiz(pdf_path: str, pdf_body_text: str, student_name: str) -> list:
                 "timer": 60
               }}
             ]
+
+            Texto de respaldo del cuerpo del trabajo:
+            {pdf_body_text[:4000]}
             """
+            
+            contents.append(prompt)
             
             response = client.models.generate_content(
                 model='gemini-3.6-flash',
-                contents=[pdf_part, prompt],
+                contents=contents,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.3
                 )
             )
             
-            quiz_data = json.loads(response.text)
-            if isinstance(quiz_data, list) and len(quiz_data) == 10:
-                return shuffle_quiz_options(quiz_data)
+            if response and response.text:
+                cleaned_text = response.text.strip()
+                # Remover posibles bloques de codigo markdown ```json ... ```
+                if cleaned_text.startswith("```"):
+                    cleaned_text = re.sub(r'^```[a-zA-Z]*\n?', '', cleaned_text)
+                    cleaned_text = re.sub(r'\n?```$', '', cleaned_text)
+                
+                quiz_data = json.loads(cleaned_text)
+                if isinstance(quiz_data, list) and len(quiz_data) >= 1:
+                    return shuffle_quiz_options(quiz_data[:10])
         except Exception as e:
-            print(f"Error llamando a Gemini API con visión multimodal: {e}")
+            print(f"Error llamando a Gemini API: {e}")
 
-    # Fallback si no hay API Key o si falló la llamada
-    return shuffle_quiz_options(_generate_fallback_quiz(pdf_body_text, student_name))
+    # Fallback seguro garantizado
+    try:
+        fallback_questions = _generate_fallback_quiz(pdf_body_text, student_name)
+        return shuffle_quiz_options(fallback_questions)
+    except Exception as fb_err:
+        print(f"Error en fallback quiz: {fb_err}")
+        return shuffle_quiz_options(_default_static_quiz(student_name))
+
+def _default_static_quiz(student_name: str) -> list:
+    """Cuestionario estático de emergencia cuando falla absolutamente todo."""
+    questions = []
+    for i in range(7):
+        questions.append({
+            "id": i + 1,
+            "type": "multiple_choice",
+            "question": f"Pregunta {i+1}: Sobre el desarrollo principal presentado en tu trabajo escolar:",
+            "options": [
+                "Exposición clara de las ideas y conceptos principales del tema.",
+                "Aspectos secundarios no desarrollados en la investigación.",
+                "Información ajena a la materia evaluada.",
+                "Ninguna de las anteriores."
+            ],
+            "correct_index": 0,
+            "timer": 30
+        })
+    for i in range(3):
+        questions.append({
+            "id": i + 8,
+            "type": "open_ended",
+            "question": f"Pregunta {i+8}: Resume con tus propias palabras la conclusión principal de tu trabajo:",
+            "expected_concepts": ["comprensión", "conclusión", "explicación"],
+            "timer": 60
+        })
+    return questions
 
 def _generate_fallback_quiz(pdf_body_text: str, student_name: str) -> list:
-    """Generador alternativo de 10 preguntas (cuando aún no se ha ingresado la Gemini API Key)."""
+    """Generador alternativo de 10 preguntas."""
+    pdf_body_text = str(pdf_body_text or "")
     STOP_WORDS = {
         "de", "la", "que", "el", "en", "y", "a", "los", "del", "se", "las", "por", "un", "para", 
         "con", "no", "una", "su", "al", "lo", "como", "mas", "pero", "sus", "le", "ya", "o", "este", 
@@ -243,13 +295,12 @@ def _generate_fallback_quiz(pdf_body_text: str, student_name: str) -> list:
         "hay", "donde", "quien", "desde", "todo", "nos", "durante", "todos", "uno", "les", "ni", "contra"
     }
     
-    # Extraer oraciones y palabras clave significativas (sustantivos o conceptos > 4 letras que no sean stop words)
     meaningful_concepts = []
     lines = []
     
     for line in pdf_body_text.splitlines():
         line_clean = line.strip()
-        if len(line_clean) > 25 and not re.search(r'(portada|trimestre|alumno|profesor|escuela|materia|grado|entrega)', line_clean, re.IGNORECASE):
+        if len(line_clean) > 20 and not re.search(r'(portada|trimestre|alumno|profesor|escuela|materia|grado|entrega)', line_clean, re.IGNORECASE):
             lines.append(line_clean)
             words = [re.sub(r'[^\w]', '', w.lower()) for w in line_clean.split()]
             for w in words:
@@ -260,7 +311,6 @@ def _generate_fallback_quiz(pdf_body_text: str, student_name: str) -> list:
     concepts_list = meaningful_concepts if len(meaningful_concepts) >= 7 else ["tema principal", "desarrollo", "concepto", "investigación", "análisis", "conclusión", "resultado"]
     
     questions = []
-    # 7 preguntas de opción múltiple (30s)
     for i in range(7):
         concept = concepts_list[i % len(concepts_list)].capitalize()
         context_sentence = sample_text[i % len(sample_text)]
@@ -279,7 +329,6 @@ def _generate_fallback_quiz(pdf_body_text: str, student_name: str) -> list:
             "timer": 30
         })
     
-    # 3 preguntas abiertas (60s)
     for i in range(3):
         context_sentence = sample_text[(i+7) % len(sample_text)]
         questions.append({
